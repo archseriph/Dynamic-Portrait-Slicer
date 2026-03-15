@@ -1,10 +1,10 @@
 using System;
 using HarmonyLib;
-using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
+using StardewValley.Menus;
 
 namespace DynamicPortraitSlicer;
 
@@ -17,6 +17,9 @@ public sealed class ModEntry : Mod
 
     // Write config after dialogue closes if we changed values during a dialogue
     private bool _pendingWriteConfig;
+
+    // Track dialogue box open/close so we can apply saved offsets once per box instance.
+    private DialogueBox? _lastDialogueBox;
 
     public override void Entry(IModHelper helper)
     {
@@ -54,21 +57,61 @@ public sealed class ModEntry : Mod
 
     private void OnUpdateTicked(object? sender, UpdateTickedEventArgs e)
     {
-        if (!_pendingWriteConfig)
-            return;
-
         if (!Context.IsWorldReady)
             return;
 
-        // wait until the dialogue is closed
-        if (Game1.activeClickableMenu is StardewValley.Menus.DialogueBox)
+        // Detect dialogue box open/close and apply saved dialogue box offset once per box instance.
+        if (Game1.activeClickableMenu is DialogueBox currentBox)
+        {
+            if (!ReferenceEquals(currentBox, _lastDialogueBox))
+            {
+                _lastDialogueBox = currentBox;
+                ApplySavedDialogueBoxOffset(currentBox);
+
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log(
+                        $"DialogueBox opened: applied saved offset ({ModEntry.Config.DialogueUiOffsetX},{ModEntry.Config.DialogueUiOffsetY}).",
+                        LogLevel.Info
+                    );
+            }
+        }
+        else
+        {
+            // Dialogue closed: if we had pending changes, write now.
+            if (_lastDialogueBox is not null)
+                _lastDialogueBox = null;
+
+            if (_pendingWriteConfig)
+            {
+                _pendingWriteConfig = false;
+                _helper.WriteConfig(ModEntry.Config);
+
+                if (ModEntry.Config.VerboseLogging)
+                    Monitor.Log("Wrote config after dialogue closed.", LogLevel.Info);
+            }
+        }
+    }
+
+    private void ApplySavedDialogueBoxOffset(DialogueBox box)
+    {
+        if (!ModEntry.Config.EnableDialogueUiNudge)
             return;
 
-        _pendingWriteConfig = false;
-        _helper.WriteConfig(ModEntry.Config);
+        int dx = ModEntry.Config.DialogueUiOffsetX;
+        int dy = ModEntry.Config.DialogueUiOffsetY;
 
-        if (ModEntry.Config.VerboseLogging)
-            Monitor.Log("Wrote config after dialogue closed.", LogLevel.Info);
+        if (dx == 0 && dy == 0)
+            return;
+
+        try
+        {
+            box.x += dx;
+            box.y += dy;
+        }
+        catch
+        {
+            // Do not break UI if something changes across SDV versions.
+        }
     }
 
     private void OnButtonPressed(object? sender, ButtonPressedEventArgs e)
@@ -79,16 +122,15 @@ public sealed class ModEntry : Mod
         if (!ModEntry.Config.EnableLiveNudgeHotkeys)
             return;
 
-        if (Game1.activeClickableMenu is not StardewValley.Menus.DialogueBox box)
+        if (Game1.activeClickableMenu is not DialogueBox box)
             return;
 
-        // Identify speaker for Option B
+        // Identify speaker for per-NPC override editing
         var npc = ReflectionHelpers.TryGetSpeakerNpc(box);
         string? npcName = npc?.Name;
 
         NpcPortraitOverride? targetNpcOverride = null;
-        if (ModEntry.Config.LiveNudgeEditsNpcOverride
-            && !string.IsNullOrWhiteSpace(npcName))
+        if (ModEntry.Config.LiveNudgeEditsNpcOverride && !string.IsNullOrWhiteSpace(npcName))
         {
             if (ModEntry.Config.AutoCreateNpcOverrideOnTalk)
                 targetNpcOverride = GetOrCreateNpcOverride(npcName!);
@@ -98,42 +140,41 @@ public sealed class ModEntry : Mod
 
         bool editNpc = targetNpcOverride is not null;
 
-        // --- Dialogue UI nudge hotkeys (Ctrl+Shift+Arrows) ---
-        // These shift all DDFC elements because we patch DialogueBoxRenderer.GetDataVector.
+        // --- Dialogue BOX nudge hotkeys (Ctrl+Shift+Arrows) ---
+        // This moves the actual menu (background + everything), and saves the offset in config.
         if (ModEntry.Config.EnableDialogueUiNudge)
         {
-            bool uiChanged = false;
+            int dx = 0;
+            int dy = 0;
 
-            if (ModEntry.Config.DialogueUiLeft.JustPressed())
-            {
-                ModEntry.Config.DialogueUiOffsetX -= ModEntry.Config.DialogueUiNudgePixels;
-                uiChanged = true;
-            }
-            else if (ModEntry.Config.DialogueUiRight.JustPressed())
-            {
-                ModEntry.Config.DialogueUiOffsetX += ModEntry.Config.DialogueUiNudgePixels;
-                uiChanged = true;
-            }
-            else if (ModEntry.Config.DialogueUiUp.JustPressed())
-            {
-                ModEntry.Config.DialogueUiOffsetY -= ModEntry.Config.DialogueUiNudgePixels;
-                uiChanged = true;
-            }
-            else if (ModEntry.Config.DialogueUiDown.JustPressed())
-            {
-                ModEntry.Config.DialogueUiOffsetY += ModEntry.Config.DialogueUiNudgePixels;
-                uiChanged = true;
-            }
+            if (ModEntry.Config.DialogueUiLeft.JustPressed()) dx = -ModEntry.Config.DialogueUiNudgePixels;
+            else if (ModEntry.Config.DialogueUiRight.JustPressed()) dx = +ModEntry.Config.DialogueUiNudgePixels;
+            else if (ModEntry.Config.DialogueUiUp.JustPressed()) dy = -ModEntry.Config.DialogueUiNudgePixels;
+            else if (ModEntry.Config.DialogueUiDown.JustPressed()) dy = +ModEntry.Config.DialogueUiNudgePixels;
 
-            if (uiChanged)
+            if (dx != 0 || dy != 0)
             {
+                ModEntry.Config.DialogueUiOffsetX += dx;
+                ModEntry.Config.DialogueUiOffsetY += dy;
+
+                // Apply immediately to the currently-open box
+                try
+                {
+                    box.x += dx;
+                    box.y += dy;
+                }
+                catch { }
+
                 _helper.Input.Suppress(e.Button);
                 _pendingWriteConfig = true;
 
                 if (ModEntry.Config.VerboseLogging)
-                    Monitor.Log($"Dialogue UI nudge: OffsetX={ModEntry.Config.DialogueUiOffsetX} OffsetY={ModEntry.Config.DialogueUiOffsetY}", LogLevel.Info);
+                    Monitor.Log(
+                        $"Dialogue BOX nudge: dx={dx} dy={dy} total=({ModEntry.Config.DialogueUiOffsetX},{ModEntry.Config.DialogueUiOffsetY})",
+                        LogLevel.Info
+                    );
 
-                return; // don't also treat as portrait nudge
+                return; // don't also treat this input as a portrait nudge
             }
         }
 
@@ -151,10 +192,10 @@ public sealed class ModEntry : Mod
             return;
         }
 
+        // --- Portrait live nudge hotkeys (Shift+Arrows / Shift+PlusMinus) ---
         int n = ModEntry.Config.NudgePixels;
         float ds = ModEntry.Config.NudgeScale;
 
-        // Local helpers to read/write the target values
         int getX() => editNpc ? targetNpcOverride!.OffsetX : ModEntry.Config.PortraitOffsetX;
         int getY() => editNpc ? targetNpcOverride!.OffsetY : ModEntry.Config.PortraitOffsetY;
         float getS() => editNpc ? targetNpcOverride!.ScaleMultiplier : ModEntry.Config.PortraitScaleMultiplier;
@@ -200,6 +241,10 @@ public sealed class ModEntry : Mod
         {
             _helper.Input.Suppress(e.Button);
             _pendingWriteConfig = true;
+
+            // Safer than auto-enable-on-talk: only enable when user explicitly nudges or commits.
+            if (editNpc)
+                targetNpcOverride!.Enabled = true;
 
             if (ModEntry.Config.VerboseLogging)
             {
@@ -255,34 +300,47 @@ public sealed class ModEntry : Mod
                 false
             });
 
-        // --- Dialogue UI nudge ---
+        // --- Dialogue box nudge (moves the actual box) ---
         AddBool(api, apiType,
             get: () => ModEntry.Config.EnableDialogueUiNudge,
             set: v => ModEntry.Config.EnableDialogueUiNudge = v,
-            name: () => "Enable dialogue UI nudge",
-            tooltip: () => "If enabled, Ctrl+Shift+Arrow nudges move the whole DDFC dialogue UI (portrait, text, hearts, etc).",
+            name: () => "Enable dialogue box nudge",
+            tooltip: () => "If enabled, Ctrl+Shift+Arrow nudges move the entire dialogue box (background + all DDFC elements).",
             fieldId: "EnableDialogueUiNudge"
         );
 
         AddNumberInt(api, apiType,
+            get: () => ModEntry.Config.DialogueUiOffsetMaxAbs,
+            set: v => ModEntry.Config.DialogueUiOffsetMaxAbs = Math.Max(0, v),
+            name: () => "Advanced: dialogue box offset max (abs)",
+            tooltip: () => "Sets the +/- range for the dialogue box offset sliders. Reopen GMCM to refresh slider bounds.",
+            fieldId: "DialogueUiOffsetMaxAbs",
+            min: 0,
+            max: 5000,
+            interval: 50
+        );
+
+        int uiMax = Math.Max(0, ModEntry.Config.DialogueUiOffsetMaxAbs);
+
+        AddNumberInt(api, apiType,
             get: () => ModEntry.Config.DialogueUiOffsetX,
             set: v => ModEntry.Config.DialogueUiOffsetX = v,
-            name: () => "Dialogue UI offset X",
-            tooltip: () => "Shifts the whole DDFC dialogue UI left/right (pixels).",
+            name: () => "Dialogue box offset X",
+            tooltip: () => "Shifts the whole dialogue box left/right (pixels).",
             fieldId: "DialogueUiOffsetX",
-            min: -2000,
-            max: 2000,
+            min: -uiMax,
+            max: uiMax,
             interval: 1
         );
 
         AddNumberInt(api, apiType,
             get: () => ModEntry.Config.DialogueUiOffsetY,
             set: v => ModEntry.Config.DialogueUiOffsetY = v,
-            name: () => "Dialogue UI offset Y",
-            tooltip: () => "Shifts the whole DDFC dialogue UI up/down (pixels).",
+            name: () => "Dialogue box offset Y",
+            tooltip: () => "Shifts the whole dialogue box up/down (pixels).",
             fieldId: "DialogueUiOffsetY",
-            min: -2000,
-            max: 2000,
+            min: -uiMax,
+            max: uiMax,
             interval: 1
         );
 
@@ -291,7 +349,7 @@ public sealed class ModEntry : Mod
             get: () => ModEntry.Config.EnableLiveNudgeHotkeys,
             set: v => ModEntry.Config.EnableLiveNudgeHotkeys = v,
             name: () => "Enable live nudge hotkeys",
-            tooltip: () => "Enable hotkeys to adjust offsets/scale while a dialogue box is open.",
+            tooltip: () => "Enable hotkeys to adjust portrait offsets/scale while a dialogue box is open.",
             fieldId: "EnableLiveNudgeHotkeys"
         );
 
@@ -299,7 +357,7 @@ public sealed class ModEntry : Mod
             get: () => ModEntry.Config.EnableRuntimeOverrides,
             set: v => ModEntry.Config.EnableRuntimeOverrides = v,
             name: () => "Enable runtime overrides",
-            tooltip: () => "Applies offsets/scale at runtime while portraits are drawn.",
+            tooltip: () => "Applies portrait offsets/scale at runtime while portraits are drawn.",
             fieldId: "EnableRuntimeOverrides"
         );
 
@@ -315,7 +373,7 @@ public sealed class ModEntry : Mod
             get: () => ModEntry.Config.LiveNudgeEditsNpcOverride,
             set: v => ModEntry.Config.LiveNudgeEditsNpcOverride = v,
             name: () => "Live nudges edit per-NPC override",
-            tooltip: () => "If enabled, hotkey nudges write into NpcOverrides for the current speaker (Option B).",
+            tooltip: () => "If enabled, hotkey nudges write into NpcOverrides for the current speaker.",
             fieldId: "LiveNudgeEditsNpcOverride"
         );
 
@@ -323,7 +381,7 @@ public sealed class ModEntry : Mod
             get: () => ModEntry.Config.AutoCreateNpcOverrideOnTalk,
             set: v => ModEntry.Config.AutoCreateNpcOverrideOnTalk = v,
             name: () => "Auto-create NPC override on talk",
-            tooltip: () => "When talking to an NPC, create a NpcOverrides entry if missing (starts disabled unless you commit).",
+            tooltip: () => "When talking to an NPC, create a NpcOverrides entry if missing (starts disabled unless you nudge or commit).",
             fieldId: "AutoCreateNpcOverrideOnTalk"
         );
 
@@ -437,7 +495,6 @@ public sealed class ModEntry : Mod
         string fieldId
     )
     {
-        // AddBoolOption(IManifest, Func<bool>, Action<bool>, Func<string>, Func<string>, string)
         GmcmReflection.GetMethodByParamCount(this.Monitor, apiType, "AddBoolOption", 6)
             .Invoke(api, new object[] { this.ModManifest, get, set, name, tooltip, fieldId });
     }
@@ -618,31 +675,12 @@ public sealed class ModEntry : Mod
             prefix: new HarmonyMethod(typeof(DdfcPortraitClampPatch), nameof(DdfcPortraitClampPatch.Prefix))
         );
 
-        // NEW: patch GetDataVector(DialogueBox, BaseData) to shift the whole DDFC UI.
-        var getDataVector = AccessTools.FirstMethod(rendererType, m =>
-        {
-            if (m.Name != "GetDataVector")
-                return false;
-
-            var p = m.GetParameters();
-            return p.Length == 2
-                   && p[0].ParameterType.FullName == "StardewValley.Menus.DialogueBox"
-                   && p[1].ParameterType.FullName == "DialogueDisplayFramework.Data.BaseData";
-        });
-
-        if (getDataVector is null)
-        {
-            Log.Log("DDFC patch: couldn't find DialogueBoxRenderer.GetDataVector(DialogueBox, BaseData).", LogLevel.Warn);
-            return;
-        }
-
-        _harmony.Patch(
-            original: getDataVector,
-            postfix: new HarmonyMethod(typeof(DdfcDialogueUiOffsetPatch), nameof(DdfcDialogueUiOffsetPatch.Postfix))
-        );
+        // NOTE:
+        // We intentionally do NOT patch DDFC GetDataVector anymore.
+        // Dialogue box nudge should move the actual DialogueBox (box.x/box.y), not just its contents.
 
         Log.Log(
-            $"Patched DDFC DialogueBoxRenderer.DrawPortrait + GetDataVector (static={drawPortrait.IsStatic}) for portrait clamp + UI nudge.",
+            $"Patched DDFC DialogueBoxRenderer.DrawPortrait (static={drawPortrait.IsStatic}) for portrait clamp.",
             LogLevel.Info
         );
     }
