@@ -15,3 +15,7 @@ If you want to use Portraiture large portraits, it is recommended to:
 1) Keep `DisableWhenPortraitureInstalled=true`
 2) Avoid portrait packs with inconsistent portrait sheet formats
 3) Toggle Portraiture’s large portrait mode only with packs known to support it
+
+Advanced config (config.json):
+- DisableWhenPortraitureInstalled: true/false
+  If true, DPS won’t patch DDFC portrait draw when Portraiture is installed.
