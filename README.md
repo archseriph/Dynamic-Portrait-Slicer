@@ -1,21 +1,15 @@
-# Dynamic Portrait Slicer
+## Using Portraiture
 
-## Compatibility: Portraiture
-
-Dynamic Portrait Slicer is designed for Dialogue Display Framework (DDFC) portrait layouts and portrait *tilesheets*.
+Dynamic Portrait Slicer modifies Dialogue Display Framework (DDFC) portrait rendering.
 
 If you use **Portraiture**:
-- Portraiture’s **small/standard tilesheet portraits** usually work fine.
-- Portraiture’s **large portraits / overlay portraits** may use nonstandard image dimensions or layouts. Some portrait packs (example: “Anime Style Skimpy Portraits for Non-marriageable NPCs”) contain portraits with wildly different formats (single-image, unusual grids, 1024x1024 frames, etc.). Those can cause missing portraits, visual glitches, or performance issues when Portraiture toggles large portrait mode.
+- Portraiture’s **large/overlay portraits** are drawn by Portraiture itself (not by DDFC `PortraitData`), so Dynamic Portrait Slicer’s portrait move/scale hotkeys may not affect them.
+- Some portrait mods are authored primarily for **DDFC** (Dialogue Display Framework) and may use **nonstandard portrait sheet layouts** (single images, unusual grids, very large frames like 1024×1024, etc.). Those mods can behave unpredictably when loaded through Portraiture (e.g. cycling portraits with `P` may cause some variants to disappear).
 
-For safety, Dynamic Portrait Slicer can automatically disable its portrait clamp/normalize patch when Portraiture is installed:
-- Config: `DisableWhenPortraitureInstalled` (default: `true`)
+If Portraiture starts acting glitchy (missing portraits, lag, weird UI):
+1) Exit the game completely.
+2) Delete/reset Portraiture’s config file.
+3) Relaunch and test again.
 
-If you want to use Portraiture large portraits, it is recommended to:
-1) Keep `DisableWhenPortraitureInstalled=true`
-2) Avoid portrait packs with inconsistent portrait sheet formats
-3) Toggle Portraiture’s large portrait mode only with packs known to support it
-
-Advanced config (config.json):
-- DisableWhenPortraitureInstalled: true/false
-  If true, DPS won’t patch DDFC portrait draw when Portraiture is installed.
+Advanced: Dynamic Portrait Slicer can skip its portrait clamp/normalize patch when Portraiture is installed:
+- `DisableWhenPortraitureInstalled` (config.json, default true)
