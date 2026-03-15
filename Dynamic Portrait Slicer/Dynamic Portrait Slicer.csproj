@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <AssemblyName>DynamicPortraitSlicer</AssemblyName>
+    <RootNamespace>DynamicPortraitSlicer</RootNamespace>
+
+    <!-- critical: SMAPI mods are libraries -->
+    <OutputType>Library</OutputType>
+
+    <!-- optional: reduces AnyCPU warnings if your refs are x64 -->
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="StardewModdingAPI">
+      <HintPath>lib\StardewModdingAPI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <Reference Include="SMAPI.Toolkit.CoreInterfaces">
+      <HintPath>lib\SMAPI.Toolkit.CoreInterfaces.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <Reference Include="Stardew Valley">
+      <HintPath>lib\Stardew Valley.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <Reference Include="MonoGame.Framework">
+      <HintPath>lib\MonoGame.Framework.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <Reference Include="HarmonyLib">
+      <HintPath>lib\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>
