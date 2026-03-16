@@ -1,9 +1,9 @@
 {
   "Name": "Dynamic Portrait Slicer",
-  "Author": "Matt",
+  "Author": "archseriph",
   "Version": "1.0.0",
   "Description": "Fixes portrait spritesheet cropping for Dialogue Display Framework layouts to prevent stretched portraits.",
-  "UniqueID": "Matt.DynamicPortraitSlicer",
+  "UniqueID": "archseriph.DynamicPortraitSlicer",
   "EntryDll": "DynamicPortraitSlicer.dll",
   "MinimumApiVersion": "4.0.0",
   "Dependencies": [
